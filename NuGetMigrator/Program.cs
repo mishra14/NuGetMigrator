@@ -24,16 +24,25 @@ namespace NuGetMigrator
             // For testing
             var dotnetPath = @"E:\cli\artifacts\win10-x64\stage2\dotnet.exe";
             var root = @"E:\migrate\NuGet.Client\src\NuGet.Clients";
-            var csProjFiles = Directory.GetFiles(root, "*.csproj", SearchOption.AllDirectories);
-            var projectFolderPath = @"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade"; //args[0];
+            var projectFolderPaths = new List<DirectoryInfo>
+            {
+                new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade"),
+                new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade\VisualStudio14.Packages"),
+                new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade\VisualStudio15.Packages")
+            };
 
             //var dotnetPath = args[0];
-            //var projectFolderPath = args[1];
+            //var root = args[1];
 
+            var csProjFiles = Directory.GetFiles(root, "*.csproj", SearchOption.AllDirectories);
+            //var projectFolderPaths = csProjFiles.Select(p => Directory.GetParent(p));
 
             var migrator = new LegacyToXplatMigrator(dotnetPath);
-            migrator.Migrate(projectFolderPath);
-
+            foreach(var projectFolderPath in projectFolderPaths)
+            {
+                migrator.Migrate(projectFolderPath.FullName);
+            }
+            
         }
 
         public LegacyToXplatMigrator(string dotnetPath)
@@ -45,7 +54,6 @@ namespace NuGetMigrator
         {
             var tempCSProjPath = CreateTempCSProjFile();
             var projectDetails = LegacyProjectDetails.ExtractDetails(projectFolderPath);
-            //var xmlDoc = XDocument.Load(tempCSProjPath);
             var xmlRoot = XElement.Load(tempCSProjPath);
             var ns = xmlRoot.GetDefaultNamespace();
 
@@ -211,43 +219,52 @@ namespace NuGetMigrator
 
         private void MigrateAssemblyReferences(IEnumerable<XElement> assemblyReferences, XElement xmlRoot, XNamespace ns)
         {
-            var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
-            foreach (var assemblyReference in assemblyReferences)
+            if (assemblyReferences.Any())
             {
-                if (!XmlContainsReference(xmlRoot, LegacyProjectDetails.ASSEMBLY_REFERNCE_TAG, assemblyReference))
+                var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
+                foreach (var assemblyReference in assemblyReferences)
                 {
-                    itemGroupElement.Add(assemblyReference);
+                    if (!XmlContainsReference(xmlRoot, LegacyProjectDetails.ASSEMBLY_REFERNCE_TAG, assemblyReference))
+                    {
+                        itemGroupElement.Add(assemblyReference);
+                    }
                 }
+                xmlRoot.Add(itemGroupElement);
             }
-            xmlRoot.Add(itemGroupElement);
         }
 
         private void MigrateProjectReferences(IEnumerable<XElement> projectReferences, XElement xmlRoot, XNamespace ns)
         {
-            var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
-            foreach (var projectReference in projectReferences)
+            if (projectReferences.Any())
             {
-                if (!XmlContainsReference(xmlRoot, LegacyProjectDetails.PROJECT_REFERNCE_TAG, projectReference))
+                var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
+                foreach (var projectReference in projectReferences)
                 {
-                    itemGroupElement.Add(projectReference);
+                    if (!XmlContainsReference(xmlRoot, LegacyProjectDetails.PROJECT_REFERNCE_TAG, projectReference))
+                    {
+                        itemGroupElement.Add(projectReference);
+                    }
                 }
+                xmlRoot.Add(itemGroupElement);
             }
-            xmlRoot.Add(itemGroupElement);
         }
 
         private void MigratePackageReferences(JToken packageReferences, XElement xmlRoot, XNamespace ns)
         {
-            var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
-            foreach (var dependency in packageReferences)
+            if (packageReferences.Any())
             {
-                var id = (dependency as JProperty).Name;
-                var version = (dependency as JProperty).Value;
-                var packageReferenceElement = new XElement(LegacyProjectDetails.PACKAGE_REFERNCE_TAG);
-                packageReferenceElement.SetAttributeValue(LegacyProjectDetails.VERSION_TAG, version);
-                packageReferenceElement.SetAttributeValue(LegacyProjectDetails.INCLUDE_TAG, id);
-                itemGroupElement.Add(packageReferenceElement);
+                var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
+                foreach (var dependency in packageReferences)
+                {
+                    var id = (dependency as JProperty).Name;
+                    var version = (dependency as JProperty).Value;
+                    var packageReferenceElement = new XElement(LegacyProjectDetails.PACKAGE_REFERNCE_TAG);
+                    packageReferenceElement.SetAttributeValue(LegacyProjectDetails.VERSION_TAG, version);
+                    packageReferenceElement.SetAttributeValue(LegacyProjectDetails.INCLUDE_TAG, id);
+                    itemGroupElement.Add(packageReferenceElement);
+                }
+                xmlRoot.Add(itemGroupElement);
             }
-            xmlRoot.Add(itemGroupElement);
         }
 
         private void MigratePackageReferences(JToken dependencies, Project project, string projectFolder)
@@ -297,9 +314,9 @@ namespace NuGetMigrator
             if(propertyGroupElement == null)
             {
                 propertyGroupElement = new XElement(LegacyProjectDetails.PROPERTY_GROUP_TAG);
-
-                propertyGroupElement.Add(projectDetails.ProjectGuid);
-                propertyGroupElement.Add(projectDetails.RootNameSpace);
+                
+                //propertyGroupElement.Add(projectDetails.ProjectGuid);
+                //propertyGroupElement.Add(projectDetails.RootNameSpace);
                 propertyGroupElement.Add(projectDetails.AssemblyName);
                 propertyGroupElement.Add(projectDetails.CodeAnalysisRuleSet);
 
@@ -307,8 +324,8 @@ namespace NuGetMigrator
             }
             else
             {
-                propertyGroupElement.Add(projectDetails.ProjectGuid);
-                propertyGroupElement.Add(projectDetails.RootNameSpace);
+                //propertyGroupElement.Add(projectDetails.ProjectGuid);
+                //propertyGroupElement.Add(projectDetails.RootNameSpace);
                 propertyGroupElement.Add(projectDetails.AssemblyName);
                 propertyGroupElement.Add(projectDetails.CodeAnalysisRuleSet);
             }
