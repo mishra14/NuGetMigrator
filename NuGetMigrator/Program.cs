@@ -57,6 +57,8 @@ namespace NuGetMigrator
             MigrateImports(projectDetails.Imports, xmlRoot);
             MigrateTargets(projectDetails.Targets, xmlRoot);
 
+            xmlRoot = RemoveAllNamespaces(xmlRoot);
+
             xmlRoot.Save(tempCSProjPath);
 
             File.Copy(projectDetails.CSProjPath, projectDetails.CSProjPath + ".old", overwrite: true);
@@ -75,6 +77,23 @@ namespace NuGetMigrator
             }
         }
 
+        // Picked this from http://stackoverflow.com/questions/987135/how-to-remove-all-namespaces-from-xml-with-c
+        private static XElement RemoveAllNamespaces(XElement xmlRoot)
+        {
+            if (!xmlRoot.HasElements)
+            {
+                var element = new XElement(xmlRoot.Name.LocalName)
+                {
+                    Value = xmlRoot.Value
+                };
+                foreach (XAttribute attribute in xmlRoot.Attributes())
+                {
+                    element.Add(attribute);
+                }
+                return element;
+            }
+            return new XElement(xmlRoot.Name.LocalName, xmlRoot.Elements().Select(el => RemoveAllNamespaces(el)));
+        }
         private void MigrateChooseElements(IEnumerable<XElement> chooseElements, XElement xmlRoot)
         {
             foreach(var chooseElement in chooseElements)
