@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Xml;
 using System.Xml.Linq;
 using Microsoft.Build.Construction;
 using Microsoft.Build.Evaluation;
@@ -24,10 +23,13 @@ namespace NuGetMigrator
 
             // For testing
             var dotnetPath = @"E:\cli\artifacts\win10-x64\stage2\dotnet.exe";
+            var root = @"E:\migrate\NuGet.Client\src\NuGet.Clients";
+            var csProjFiles = Directory.GetFiles(root, "*.csproj", SearchOption.AllDirectories);
             var projectFolderPath = @"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade"; //args[0];
 
             //var dotnetPath = args[0];
             //var projectFolderPath = args[1];
+
 
             var migrator = new LegacyToXplatMigrator(dotnetPath);
             migrator.Migrate(projectFolderPath);
@@ -43,22 +45,18 @@ namespace NuGetMigrator
         {
             var tempCSProjPath = CreateTempCSProjFile();
             var projectDetails = LegacyProjectDetails.ExtractDetails(projectFolderPath);
-
-            //var project = GetProject(tempCSProjPath);
-
-            //project.Save();
-
+            //var xmlDoc = XDocument.Load(tempCSProjPath);
             var xmlRoot = XElement.Load(tempCSProjPath);
+            var ns = xmlRoot.GetDefaultNamespace();
 
-            MigrateFrameworks(projectDetails.Frameworks, xmlRoot);
-            MigrateProperties(projectDetails, xmlRoot);
-            MigrateChooseElements(projectDetails.ChooseElements, xmlRoot);
-            MigrateDependencies(projectDetails, xmlRoot);
-            MigrateImports(projectDetails.Imports, xmlRoot);
-            MigrateTargets(projectDetails.Targets, xmlRoot);
+            MigrateFrameworks(projectDetails.Frameworks, xmlRoot, ns);
+            MigrateProperties(projectDetails, xmlRoot, ns);
+            MigrateChooseElements(projectDetails.ChooseElements, xmlRoot, ns);
+            MigrateDependencies(projectDetails, xmlRoot, ns);
+            MigrateImports(projectDetails.Imports, xmlRoot, ns);
+            MigrateTargets(projectDetails.Targets, xmlRoot, ns);
 
             xmlRoot = RemoveAllNamespaces(xmlRoot);
-
             xmlRoot.Save(tempCSProjPath);
 
             File.Copy(projectDetails.CSProjPath, projectDetails.CSProjPath + ".old", overwrite: true);
@@ -77,24 +75,39 @@ namespace NuGetMigrator
             }
         }
 
-        // Picked this from http://stackoverflow.com/questions/987135/how-to-remove-all-namespaces-from-xml-with-c
+        // Picked part of this from http://stackoverflow.com/questions/987135/how-to-remove-all-namespaces-from-xml-with-c
         private static XElement RemoveAllNamespaces(XElement xmlRoot)
         {
+            
+
             if (!xmlRoot.HasElements)
             {
                 var element = new XElement(xmlRoot.Name.LocalName)
                 {
                     Value = xmlRoot.Value
                 };
-                foreach (XAttribute attribute in xmlRoot.Attributes())
+                foreach (var attribute in xmlRoot.Attributes())
                 {
-                    element.Add(attribute);
+                    element.SetAttributeValue(attribute.Name.LocalName, attribute.Value);
                 }
+
                 return element;
             }
-            return new XElement(xmlRoot.Name.LocalName, xmlRoot.Elements().Select(el => RemoveAllNamespaces(el)));
+            else
+            {
+                var element = new XElement(xmlRoot.Name.LocalName, xmlRoot.Elements().Select(el => RemoveAllNamespaces(el)));
+                foreach (var attribute in xmlRoot.Attributes())
+                {
+                    element.SetAttributeValue(attribute.Name.LocalName, attribute.Value);
+                }
+
+                return element;
+            }
+
+
         }
-        private void MigrateChooseElements(IEnumerable<XElement> chooseElements, XElement xmlRoot)
+
+        private void MigrateChooseElements(IEnumerable<XElement> chooseElements, XElement xmlRoot, XNamespace ns)
         {
             foreach(var chooseElement in chooseElements)
             {
@@ -107,7 +120,7 @@ namespace NuGetMigrator
                         var condition = whenElement.Attribute(LegacyProjectDetails.CONDITION_TAG);
                         conditionedGroup.SetAttributeValue(condition.Name.LocalName, condition.Value);
 
-                        xmlRoot.Add(conditionedGroup);
+                        xmlRoot.Add(conditionedGroup, ns);
                     }
                 }
             }
@@ -143,7 +156,7 @@ namespace NuGetMigrator
             project.SetProperty(property, frameworksStringBuilder.ToString());
         }
 
-        private void MigrateFrameworks(JToken frameworks, XElement xmlRoot)
+        private void MigrateFrameworks(JToken frameworks, XElement xmlRoot, XNamespace ns)
         {
             var frameworksStringBuilder = new StringBuilder();
             var first = true;
@@ -173,14 +186,14 @@ namespace NuGetMigrator
             var frameworkElement = xmlRoot.Descendants().Where(e => e.Name.LocalName == LegacyProjectDetails.TARGET_FRAMEWORK_TAG).FirstOrDefault();
             if (frameworkElement == null)
             {
-                xmlRoot.Add(new XElement(LegacyProjectDetails.PROPERTY_GROUP_TAG, new XElement(property, frameworksStringBuilder.ToString())));
+                xmlRoot.Add(new XElement(LegacyProjectDetails.PROPERTY_GROUP_TAG, new XElement(property, frameworksStringBuilder.ToString())), ns);
             }
             else
             {
                 if (frameworks.Count() > 1)
                 {
                     frameworkElement.Remove();
-                    xmlRoot.Add(new XElement(LegacyProjectDetails.PROPERTY_GROUP_TAG, new XElement(property, frameworksStringBuilder.ToString())));
+                    xmlRoot.Add(new XElement(LegacyProjectDetails.PROPERTY_GROUP_TAG, new XElement(property, frameworksStringBuilder.ToString())), ns);
                 }
                 else
                 {
@@ -189,15 +202,14 @@ namespace NuGetMigrator
             }
         }
 
-
-        private void MigrateDependencies(LegacyProjectDetails projectDetails, XElement xmlRoot)
+        private void MigrateDependencies(LegacyProjectDetails projectDetails, XElement xmlRoot, XNamespace ns)
         {
-            MigrateAssemblyReferences(projectDetails.AssemblyReferences, xmlRoot);
-            MigrateProjectReferences(projectDetails.ProjectReferences, xmlRoot);
-            MigratePackageReferences(projectDetails.PackageReferences, xmlRoot);
+            MigrateAssemblyReferences(projectDetails.AssemblyReferences, xmlRoot, ns);
+            MigrateProjectReferences(projectDetails.ProjectReferences, xmlRoot, ns);
+            MigratePackageReferences(projectDetails.PackageReferences, xmlRoot, ns);
         }
 
-        private void MigrateAssemblyReferences(IEnumerable<XElement> assemblyReferences, XElement xmlRoot)
+        private void MigrateAssemblyReferences(IEnumerable<XElement> assemblyReferences, XElement xmlRoot, XNamespace ns)
         {
             var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
             foreach (var assemblyReference in assemblyReferences)
@@ -210,7 +222,7 @@ namespace NuGetMigrator
             xmlRoot.Add(itemGroupElement);
         }
 
-        private void MigrateProjectReferences(IEnumerable<XElement> projectReferences, XElement xmlRoot)
+        private void MigrateProjectReferences(IEnumerable<XElement> projectReferences, XElement xmlRoot, XNamespace ns)
         {
             var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
             foreach (var projectReference in projectReferences)
@@ -223,7 +235,7 @@ namespace NuGetMigrator
             xmlRoot.Add(itemGroupElement);
         }
 
-        private void MigratePackageReferences(JToken packageReferences, XElement xmlRoot)
+        private void MigratePackageReferences(JToken packageReferences, XElement xmlRoot, XNamespace ns)
         {
             var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
             foreach (var dependency in packageReferences)
@@ -274,7 +286,7 @@ namespace NuGetMigrator
                 .Any();
         }
 
-        private void MigrateProperties(LegacyProjectDetails projectDetails, XElement xmlRoot)
+        private void MigrateProperties(LegacyProjectDetails projectDetails, XElement xmlRoot, XNamespace ns)
         {
             var propertyGroupElement = xmlRoot
                 .Descendants()
@@ -291,7 +303,7 @@ namespace NuGetMigrator
                 propertyGroupElement.Add(projectDetails.AssemblyName);
                 propertyGroupElement.Add(projectDetails.CodeAnalysisRuleSet);
 
-                xmlRoot.Add(propertyGroupElement);
+                xmlRoot.Add(propertyGroupElement, ns);
             }
             else
             {
@@ -302,19 +314,19 @@ namespace NuGetMigrator
             }
         }
 
-        private void MigrateImports(IEnumerable<XElement> imports, XElement xmlRoot)
+        private void MigrateImports(IEnumerable<XElement> imports, XElement xmlRoot, XNamespace ns)
         {
             foreach(var import in imports)
             {
-                xmlRoot.Add(import);
+                xmlRoot.Add(import, ns);
             }
         }
 
-        private void MigrateTargets(IEnumerable<XElement> targets, XElement xmlRoot)
+        private void MigrateTargets(IEnumerable<XElement> targets, XElement xmlRoot, XNamespace ns)
         {
             foreach (var target in targets)
             {
-                xmlRoot.Add(target);
+                xmlRoot.Add(target, ns);
             }
         }
 
@@ -340,6 +352,8 @@ namespace NuGetMigrator
             
             return Directory.GetFiles(tempFolder, "*.csproj")[0];
         }
+
+        // Can be used if the original csproj file has to be edited in place
         private void PrepareCSprojFile(string csprojPath, string tempCSProjPath)
         {
             var xmlRoot = XElement.Load(tempCSProjPath);
@@ -372,6 +386,7 @@ namespace NuGetMigrator
         }
 
 
+        // Can be used if msbuild needs to be used for inserting properties/references
         private Project GetProject(string projectCSProjPath)
         {
             var projectRootElement = TryOpenProjectRootElement(projectCSProjPath);
@@ -381,6 +396,8 @@ namespace NuGetMigrator
             }
             return new Project(projectRootElement);
         }
+
+        // Can be used if msbuild needs to be used for inserting properties/references
         private ProjectRootElement TryOpenProjectRootElement(string filename)
         {
             try
@@ -394,6 +411,8 @@ namespace NuGetMigrator
                 return null;
             }
         }
+
+        // Can be used if msbuild needs to be used for inserting properties/references
         private IEnumerable<ProjectItem> GetPackageReferences(Project project, string id)
         {
             return project.AllEvaluatedItems
