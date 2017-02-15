@@ -28,6 +28,9 @@ namespace NuGetMigrator
         public const string INCLUDE_TAG = "Include";
         public const string VERSION_TAG = "Version";
         public const string OUTPUT_TYPE_TAG = "OutputType";
+        public const string CHOOSE_TAG = "Choose";
+        public const string WHEN_TAG = "When";
+        public const string CONDITION_TAG = "Condition";
 
         public string CSProjPath { get; set; }
         public string ProjectJsonPath { get; set; }
@@ -38,6 +41,7 @@ namespace NuGetMigrator
         public IEnumerable<XElement> Targets { get; set; }
         public IEnumerable<XElement> ProjectReferences { get; set; }
         public IEnumerable<XElement> AssemblyReferences { get; set; }
+        public IEnumerable<XElement> ChooseElements { get; set; }
         public XElement ProjectGuid { get; set; }
         public XElement RootNameSpace { get; set; }
         public XElement AssemblyName { get; set; }
@@ -68,6 +72,15 @@ namespace NuGetMigrator
                 .ToList();
             Targets = xmlRoot.Descendants()
                 .Where(e => e.Name.LocalName == TARGET_TAG)
+                .ToList();
+            ChooseElements = xmlRoot.Descendants()
+                .Where(e => e.Name.LocalName == CHOOSE_TAG)
+                .ToList();
+            ProjectReferences = xmlRoot.Descendants()
+                .Where(e => e.Name.LocalName == PROJECT_REFERNCE_TAG)
+                .ToList();
+            AssemblyReferences = xmlRoot.Descendants()
+                .Where(e => e.Name.LocalName == ASSEMBLY_REFERNCE_TAG)
                 .ToList();
             ProjectGuid = xmlRoot.Descendants()
                 .Where(e => e.Name.LocalName == PROJECT_GUID_TAG)

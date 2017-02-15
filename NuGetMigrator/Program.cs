@@ -24,7 +24,7 @@ namespace NuGetMigrator
 
             // For testing
             var dotnetPath = @"E:\cli\artifacts\win10-x64\stage2\dotnet.exe";
-            var projectFolderPath = @"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade\VisualStudio14.Packages"; //args[0];
+            var projectFolderPath = @"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade"; //args[0];
 
             //var dotnetPath = args[0];
             //var projectFolderPath = args[1];
@@ -52,15 +52,21 @@ namespace NuGetMigrator
 
             MigrateFrameworks(projectDetails.Frameworks, xmlRoot);
             MigrateProperties(projectDetails, xmlRoot);
-            MigrateDependencies(projectDetails.PackageReferences, xmlRoot);
+            MigrateChooseElements(projectDetails.ChooseElements, xmlRoot);
+            MigrateDependencies(projectDetails, xmlRoot);
             MigrateImports(projectDetails.Imports, xmlRoot);
             MigrateTargets(projectDetails.Targets, xmlRoot);
 
             xmlRoot.Save(tempCSProjPath);
 
-            //File.Copy(projectDetails.CSProjPath, projectDetails.CSProjPath + ".old", overwrite: true);
-            //File.Copy(tempCSProjPath, projectDetails.CSProjPath, overwrite: true);
-            //File.Move(projectDetails.ProjectJsonPath, projectDetails.ProjectJsonPath + ".old");
+            File.Copy(projectDetails.CSProjPath, projectDetails.CSProjPath + ".old", overwrite: true);
+            File.Copy(tempCSProjPath, projectDetails.CSProjPath, overwrite: true);
+
+            if(File.Exists(projectDetails.ProjectJsonPath + ".old"))
+            {
+                File.Delete(projectDetails.ProjectJsonPath + ".old");
+            }
+            File.Move(projectDetails.ProjectJsonPath, projectDetails.ProjectJsonPath + ".old");
 
             var tempDir = Path.GetDirectoryName(tempCSProjPath);
             if (Directory.Exists(tempDir))
@@ -69,7 +75,24 @@ namespace NuGetMigrator
             }
         }
 
+        private void MigrateChooseElements(IEnumerable<XElement> chooseElements, XElement xmlRoot)
+        {
+            foreach(var chooseElement in chooseElements)
+            {
+                var whenElements = chooseElement.Descendants().Where(e => e.Name.LocalName == LegacyProjectDetails.WHEN_TAG);
+                foreach (var whenElement in whenElements)
+                {
+                    var conditionedGroups = whenElement.Elements();
+                    foreach(var conditionedGroup in conditionedGroups)
+                    {
+                        var condition = whenElement.Attribute(LegacyProjectDetails.CONDITION_TAG);
+                        conditionedGroup.SetAttributeValue(condition.Name.LocalName, condition.Value);
 
+                        xmlRoot.Add(conditionedGroup);
+                    }
+                }
+            }
+        }
 
         private void MigrateFrameworks(JToken frameworks, Project project, string csprojPath)
         {
@@ -147,10 +170,44 @@ namespace NuGetMigrator
             }
         }
 
-        private void MigrateDependencies(JToken dependencies, XElement xmlRoot)
+
+        private void MigrateDependencies(LegacyProjectDetails projectDetails, XElement xmlRoot)
+        {
+            MigrateAssemblyReferences(projectDetails.AssemblyReferences, xmlRoot);
+            MigrateProjectReferences(projectDetails.ProjectReferences, xmlRoot);
+            MigratePackageReferences(projectDetails.PackageReferences, xmlRoot);
+        }
+
+        private void MigrateAssemblyReferences(IEnumerable<XElement> assemblyReferences, XElement xmlRoot)
         {
             var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
-            foreach (var dependency in dependencies)
+            foreach (var assemblyReference in assemblyReferences)
+            {
+                if (!XmlContainsReference(xmlRoot, LegacyProjectDetails.ASSEMBLY_REFERNCE_TAG, assemblyReference))
+                {
+                    itemGroupElement.Add(assemblyReference);
+                }
+            }
+            xmlRoot.Add(itemGroupElement);
+        }
+
+        private void MigrateProjectReferences(IEnumerable<XElement> projectReferences, XElement xmlRoot)
+        {
+            var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
+            foreach (var projectReference in projectReferences)
+            {
+                if (!XmlContainsReference(xmlRoot, LegacyProjectDetails.PROJECT_REFERNCE_TAG, projectReference))
+                {
+                    itemGroupElement.Add(projectReference);
+                }
+            }
+            xmlRoot.Add(itemGroupElement);
+        }
+
+        private void MigratePackageReferences(JToken packageReferences, XElement xmlRoot)
+        {
+            var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
+            foreach (var dependency in packageReferences)
             {
                 var id = (dependency as JProperty).Name;
                 var version = (dependency as JProperty).Value;
@@ -162,7 +219,7 @@ namespace NuGetMigrator
             xmlRoot.Add(itemGroupElement);
         }
 
-        private void MigrateDependencies(JToken dependencies, Project project, string projectFolder)
+        private void MigratePackageReferences(JToken dependencies, Project project, string projectFolder)
         {
             foreach (var dependency in dependencies)
             {
@@ -187,6 +244,15 @@ namespace NuGetMigrator
                     }
                 }
             }
+        }
+
+        private bool XmlContainsReference(XElement xmlRoot, string referenceType, XElement reference)
+        {
+            var includeValue = reference.Attribute(LegacyProjectDetails.INCLUDE_TAG).Value;
+            return xmlRoot
+                .Descendants()
+                .Where(e => e.Name.LocalName == referenceType && e.Attribute(LegacyProjectDetails.INCLUDE_TAG).Value == includeValue)
+                .Any();
         }
 
         private void MigrateProperties(LegacyProjectDetails projectDetails, XElement xmlRoot)
