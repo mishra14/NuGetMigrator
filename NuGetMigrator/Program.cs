@@ -12,9 +12,9 @@ using Newtonsoft.Json.Linq;
 
 namespace NuGetMigrator
 {
-    class Program
+    class LegacyToXplatMigrator
     {
-        private static string _dotnetPath = @"E:\cli\artifacts\win10-x64\stage2\dotnet.exe";
+        public string DotnetPath { get; set; }
 
         static void Main(string[] args)
         {
@@ -22,59 +22,58 @@ namespace NuGetMigrator
                 @"C:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\MSBuild\Sdks", 
                 EnvironmentVariableTarget.Process);
 
-            var projectFolder = @"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade\VisualStudio15.Packages"; //args[0];
-            var projectJsonPath = Path.Combine(projectFolder, "project.json");
-            var csprojPath = Directory.GetFiles(projectFolder, "*.csproj")[0];
-            var tempCSProjPath = CreateTempCSProjFile();
-            PrepareCSprojFile(csprojPath, tempCSProjPath);
-            var project = GetProject(csprojPath);
-            using (StreamReader r = File.OpenText(projectJsonPath))
-            {
-                var jsonString = r.ReadToEnd();
-                var jsonObj = JObject.Parse(jsonString);
-                var dependencies = jsonObj["dependencies"];
-                var frameworks = jsonObj["frameworks"];
-                var runtimes = jsonObj["runtimes"];
-                MigrateFrameworks(frameworks, project, csprojPath);
-                MigrateDependencies(dependencies, project, projectFolder);
+            // For testing
+            var dotnetPath = @"E:\cli\artifacts\win10-x64\stage2\dotnet.exe";
+            var projectFolderPath = @"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade\VisualStudio14.Packages"; //args[0];
 
-                
-            }
-            project.Save();
+            //var dotnetPath = args[0];
+            //var projectFolderPath = args[1];
+
+            var migrator = new LegacyToXplatMigrator(dotnetPath);
+            migrator.Migrate(projectFolderPath);
 
         }
 
-        private static void MigrateDependencies(JToken dependencies, Project project, string projectFolder)
+        public LegacyToXplatMigrator(string dotnetPath)
         {
-            foreach (var dependency in dependencies)
+            DotnetPath = dotnetPath ?? throw new ArgumentNullException(nameof(dotnetPath));
+        }
+
+        public void Migrate(string projectFolderPath)
+        {
+            var tempCSProjPath = CreateTempCSProjFile();
+            var projectDetails = LegacyProjectDetails.ExtractDetails(projectFolderPath);
+
+            //var project = GetProject(tempCSProjPath);
+
+            //project.Save();
+
+            var xmlRoot = XElement.Load(tempCSProjPath);
+
+            MigrateFrameworks(projectDetails.Frameworks, xmlRoot);
+            MigrateProperties(projectDetails, xmlRoot);
+            MigrateDependencies(projectDetails.PackageReferences, xmlRoot);
+            MigrateImports(projectDetails.Imports, xmlRoot);
+            MigrateTargets(projectDetails.Targets, xmlRoot);
+
+            xmlRoot.Save(tempCSProjPath);
+
+            //File.Copy(projectDetails.CSProjPath, projectDetails.CSProjPath + ".old", overwrite: true);
+            //File.Copy(tempCSProjPath, projectDetails.CSProjPath, overwrite: true);
+            //File.Move(projectDetails.ProjectJsonPath, projectDetails.ProjectJsonPath + ".old");
+
+            var tempDir = Path.GetDirectoryName(tempCSProjPath);
+            if (Directory.Exists(tempDir))
             {
-                var id = (dependency as JProperty).Name;
-                var version = (dependency as JProperty).Value;
-                if (!GetPackageReferences(project, id).Any())
-                {
-                    ProcessStartInfo startInfo = new ProcessStartInfo
-                    {
-                        RedirectStandardOutput = false,
-                        RedirectStandardInput = false,
-                        UseShellExecute = false,
-                        WorkingDirectory = projectFolder,
-                        FileName = _dotnetPath,
-                        Arguments = $"add package {id} -v {version}"
-                    };
-                    using (Process process = new Process())
-                    {
-                        process.StartInfo = startInfo;
-                        process.Start();
-                        process.WaitForExit();
-                    }
-                }
+                Directory.Delete(tempDir, recursive: true);
             }
         }
 
-        private static void MigrateFrameworks(JToken frameworks, Project project, string csprojPath)
+
+
+        private void MigrateFrameworks(JToken frameworks, Project project, string csprojPath)
         {
             var frameworksStringBuilder = new StringBuilder();
-            var xml = XElement.Load(csprojPath);
             var first = true;
             foreach (var framework in frameworks)
             {
@@ -89,7 +88,6 @@ namespace NuGetMigrator
                 var id = (framework as JProperty).Name;
                 frameworksStringBuilder.Append(id);
             }
-            XElement frameworkPropertyGroup = null;
             var property = string.Empty;
             if (frameworks.Count() > 1)
             {
@@ -101,11 +99,141 @@ namespace NuGetMigrator
             }
 
             project.SetProperty(property, frameworksStringBuilder.ToString());
-
-            xml.Add(frameworkPropertyGroup);
-            xml.Save(csprojPath);
         }
-        private static string CreateTempCSProjFile()
+
+        private void MigrateFrameworks(JToken frameworks, XElement xmlRoot)
+        {
+            var frameworksStringBuilder = new StringBuilder();
+            var first = true;
+            foreach (var framework in frameworks)
+            {
+                if (!first)
+                {
+                    frameworksStringBuilder.Append(';');
+                }
+                else
+                {
+                    first = false;
+                }
+                var id = (framework as JProperty).Name;
+                frameworksStringBuilder.Append(id);
+            }
+            var property = string.Empty;
+            if (frameworks.Count() > 1)
+            {
+                property = LegacyProjectDetails.TARGET_FRAMEWORKS_TAG;
+            }
+            else
+            {
+                property = LegacyProjectDetails.TARGET_FRAMEWORK_TAG;
+            }
+
+            var frameworkElement = xmlRoot.Descendants().Where(e => e.Name.LocalName == LegacyProjectDetails.TARGET_FRAMEWORK_TAG).FirstOrDefault();
+            if (frameworkElement == null)
+            {
+                xmlRoot.Add(new XElement(LegacyProjectDetails.PROPERTY_GROUP_TAG, new XElement(property, frameworksStringBuilder.ToString())));
+            }
+            else
+            {
+                if (frameworks.Count() > 1)
+                {
+                    frameworkElement.Remove();
+                    xmlRoot.Add(new XElement(LegacyProjectDetails.PROPERTY_GROUP_TAG, new XElement(property, frameworksStringBuilder.ToString())));
+                }
+                else
+                {
+                    frameworkElement.Value = frameworksStringBuilder.ToString();
+                }
+            }
+        }
+
+        private void MigrateDependencies(JToken dependencies, XElement xmlRoot)
+        {
+            var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
+            foreach (var dependency in dependencies)
+            {
+                var id = (dependency as JProperty).Name;
+                var version = (dependency as JProperty).Value;
+                var packageReferenceElement = new XElement(LegacyProjectDetails.PACKAGE_REFERNCE_TAG);
+                packageReferenceElement.SetAttributeValue(LegacyProjectDetails.VERSION_TAG, version);
+                packageReferenceElement.SetAttributeValue(LegacyProjectDetails.INCLUDE_TAG, id);
+                itemGroupElement.Add(packageReferenceElement);
+            }
+            xmlRoot.Add(itemGroupElement);
+        }
+
+        private void MigrateDependencies(JToken dependencies, Project project, string projectFolder)
+        {
+            foreach (var dependency in dependencies)
+            {
+                var id = (dependency as JProperty).Name;
+                var version = (dependency as JProperty).Value;
+                if (!GetPackageReferences(project, id).Any())
+                {
+                    ProcessStartInfo startInfo = new ProcessStartInfo
+                    {
+                        RedirectStandardOutput = false,
+                        RedirectStandardInput = false,
+                        UseShellExecute = false,
+                        WorkingDirectory = project.DirectoryPath,
+                        FileName = DotnetPath,
+                        Arguments = $"add package {id} -v {version}"
+                    };
+                    using (Process process = new Process())
+                    {
+                        process.StartInfo = startInfo;
+                        process.Start();
+                        process.WaitForExit();
+                    }
+                }
+            }
+        }
+
+        private void MigrateProperties(LegacyProjectDetails projectDetails, XElement xmlRoot)
+        {
+            var propertyGroupElement = xmlRoot
+                .Descendants()
+                .Where(e => e.Name.LocalName == LegacyProjectDetails.PROPERTY_GROUP_TAG && 
+                            e.Descendants().Where(f => f.Name.LocalName == LegacyProjectDetails.OUTPUT_TYPE_TAG).Any())
+                 .FirstOrDefault();
+                
+            if(propertyGroupElement == null)
+            {
+                propertyGroupElement = new XElement(LegacyProjectDetails.PROPERTY_GROUP_TAG);
+
+                propertyGroupElement.Add(projectDetails.ProjectGuid);
+                propertyGroupElement.Add(projectDetails.RootNameSpace);
+                propertyGroupElement.Add(projectDetails.AssemblyName);
+                propertyGroupElement.Add(projectDetails.CodeAnalysisRuleSet);
+
+                xmlRoot.Add(propertyGroupElement);
+            }
+            else
+            {
+                propertyGroupElement.Add(projectDetails.ProjectGuid);
+                propertyGroupElement.Add(projectDetails.RootNameSpace);
+                propertyGroupElement.Add(projectDetails.AssemblyName);
+                propertyGroupElement.Add(projectDetails.CodeAnalysisRuleSet);
+            }
+        }
+
+        private void MigrateImports(IEnumerable<XElement> imports, XElement xmlRoot)
+        {
+            foreach(var import in imports)
+            {
+                xmlRoot.Add(import);
+            }
+        }
+
+        private void MigrateTargets(IEnumerable<XElement> targets, XElement xmlRoot)
+        {
+            foreach (var target in targets)
+            {
+                xmlRoot.Add(target);
+            }
+        }
+
+        private string CreateTempCSProjFile()
         {
             var tempFolder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempFolder);
@@ -115,8 +243,8 @@ namespace NuGetMigrator
                 RedirectStandardInput = false,
                 UseShellExecute = false,
                 WorkingDirectory = tempFolder,
-                FileName = _dotnetPath,
-                Arguments = $"new console"
+                FileName = DotnetPath,
+                Arguments = $"new classlib"
             };
             using (Process process = new Process())
             {
@@ -127,7 +255,7 @@ namespace NuGetMigrator
             
             return Directory.GetFiles(tempFolder, "*.csproj")[0];
         }
-        private static void PrepareCSprojFile(string csprojPath, string tempCSProjPath)
+        private void PrepareCSprojFile(string csprojPath, string tempCSProjPath)
         {
             var xmlRoot = XElement.Load(tempCSProjPath);
             xmlRoot.SetAttributeValue(XName.Get("ToolsVersion"), null);
@@ -159,7 +287,7 @@ namespace NuGetMigrator
         }
 
 
-        private static Project GetProject(string projectCSProjPath)
+        private Project GetProject(string projectCSProjPath)
         {
             var projectRootElement = TryOpenProjectRootElement(projectCSProjPath);
             if (projectCSProjPath == null)
@@ -168,7 +296,7 @@ namespace NuGetMigrator
             }
             return new Project(projectRootElement);
         }
-        private static ProjectRootElement TryOpenProjectRootElement(string filename)
+        private ProjectRootElement TryOpenProjectRootElement(string filename)
         {
             try
             {
@@ -181,7 +309,7 @@ namespace NuGetMigrator
                 return null;
             }
         }
-        private static IEnumerable<ProjectItem> GetPackageReferences(Project project, string id)
+        private IEnumerable<ProjectItem> GetPackageReferences(Project project, string id)
         {
             return project.AllEvaluatedItems
                 .Where(item => item.ItemType.Equals("PackageReference", StringComparison.OrdinalIgnoreCase) &&
