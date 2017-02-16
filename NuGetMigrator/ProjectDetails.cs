@@ -31,6 +31,7 @@ namespace NuGetMigrator
         public const string CHOOSE_TAG = "Choose";
         public const string WHEN_TAG = "When";
         public const string CONDITION_TAG = "Condition";
+        public const string GENERATE_ASSEMBLY_INFO_TAG = "GenerateAssemblyInfo";
 
         public string CSProjPath { get; set; }
         public string ProjectJsonPath { get; set; }
@@ -46,7 +47,7 @@ namespace NuGetMigrator
         public XElement RootNameSpace { get; set; }
         public XElement AssemblyName { get; set; }
         public XElement CodeAnalysisRuleSet { get; set; }
-
+        public XElement GenerateAssemblyInfo { get; set; }
 
         public static LegacyProjectDetails ExtractDetails(string projectFolderPath)
         {
@@ -62,6 +63,25 @@ namespace NuGetMigrator
             projectDetails.ExtractCSProjDetails();
 
             return projectDetails;
+        }
+
+        public static bool CanProjectBeMigrated(string projectFolderPath)
+        {
+            var projectJsonPath = Path.Combine(projectFolderPath, "project.json");
+            var csprojPath = Directory.GetFiles(projectFolderPath, "*.csproj", SearchOption.TopDirectoryOnly)[0];
+
+            if (!File.Exists(csprojPath))
+            {
+                Console.WriteLine($"Project {Path.GetFileName(projectFolderPath)} cannot be migrated. csproj file {csprojPath} not found.");
+                return false;
+            }
+
+            if (!File.Exists(projectJsonPath))
+            {
+                Console.WriteLine($"Project {Path.GetFileName(projectFolderPath)} cannot be migrated. Project.Json file {projectJsonPath} not found.");
+                return false;
+            }
+            return true;
         }
 
         private void ExtractCSProjDetails()
@@ -94,6 +114,14 @@ namespace NuGetMigrator
             CodeAnalysisRuleSet = xmlRoot.Descendants()
                 .Where(e => e.Name.LocalName == CODE_ANALYSIS_RULE_SET_TAG)
                 .FirstOrDefault();
+        }
+
+        public void DisableGenerateAssemblyInfo()
+        {
+            var element = new XElement(GENERATE_ASSEMBLY_INFO_TAG);
+            element.SetAttributeValue(CONDITION_TAG, $"'$({GENERATE_ASSEMBLY_INFO_TAG})' == ''");
+            element.Value = "false";
+            GenerateAssemblyInfo = element;
         }
 
         public void ExtractProjectJsonDetails()

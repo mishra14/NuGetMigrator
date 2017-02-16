@@ -24,23 +24,26 @@ namespace NuGetMigrator
             // For testing
             var dotnetPath = @"E:\cli\artifacts\win10-x64\stage2\dotnet.exe";
             var root = @"E:\migrate\NuGet.Client\src\NuGet.Clients";
-            var projectFolderPaths = new List<DirectoryInfo>
-            {
-                new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade"),
-                new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade\VisualStudio14.Packages"),
-                new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade\VisualStudio15.Packages")
-            };
+            //var projectFolderPaths = new List<DirectoryInfo>
+            //{
+            //    new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade"),
+            //    new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade\VisualStudio14.Packages"),
+            //    new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade\VisualStudio15.Packages")
+            //};
 
             //var dotnetPath = args[0];
             //var root = args[1];
 
             var csProjFiles = Directory.GetFiles(root, "*.csproj", SearchOption.AllDirectories);
-            //var projectFolderPaths = csProjFiles.Select(p => Directory.GetParent(p));
+            var projectFolderPaths = csProjFiles.Select(p => Directory.GetParent(p));
 
             var migrator = new LegacyToXplatMigrator(dotnetPath);
             foreach(var projectFolderPath in projectFolderPaths)
             {
-                migrator.Migrate(projectFolderPath.FullName);
+                if(!projectFolderPath.FullName.Contains("NuGet.Tools"))
+                {
+                    migrator.Migrate(projectFolderPath.FullName);
+                }
             }
             
         }
@@ -52,67 +55,66 @@ namespace NuGetMigrator
 
         public void Migrate(string projectFolderPath)
         {
-            var tempCSProjPath = CreateTempCSProjFile();
-            var projectDetails = LegacyProjectDetails.ExtractDetails(projectFolderPath);
-            var xmlRoot = XElement.Load(tempCSProjPath);
-            var ns = xmlRoot.GetDefaultNamespace();
-
-            MigrateFrameworks(projectDetails.Frameworks, xmlRoot, ns);
-            MigrateProperties(projectDetails, xmlRoot, ns);
-            MigrateChooseElements(projectDetails.ChooseElements, xmlRoot, ns);
-            MigrateDependencies(projectDetails, xmlRoot, ns);
-            MigrateImports(projectDetails.Imports, xmlRoot, ns);
-            MigrateTargets(projectDetails.Targets, xmlRoot, ns);
-
-            xmlRoot = RemoveAllNamespaces(xmlRoot);
-            xmlRoot.Save(tempCSProjPath);
-
-            File.Copy(projectDetails.CSProjPath, projectDetails.CSProjPath + ".old", overwrite: true);
-            File.Copy(tempCSProjPath, projectDetails.CSProjPath, overwrite: true);
-
-            if(File.Exists(projectDetails.ProjectJsonPath + ".old"))
+            if (LegacyProjectDetails.CanProjectBeMigrated(projectFolderPath))
             {
-                File.Delete(projectDetails.ProjectJsonPath + ".old");
-            }
-            File.Move(projectDetails.ProjectJsonPath, projectDetails.ProjectJsonPath + ".old");
+                Console.WriteLine($"Migrating {projectFolderPath}");
+                var tempCSProjPath = CreateTempCSProjFile();
+                var projectDetails = LegacyProjectDetails.ExtractDetails(projectFolderPath);
+                var xmlRoot = XElement.Load(tempCSProjPath);
+                var ns = xmlRoot.GetDefaultNamespace();
 
-            var tempDir = Path.GetDirectoryName(tempCSProjPath);
-            if (Directory.Exists(tempDir))
-            {
-                Directory.Delete(tempDir, recursive: true);
+                projectDetails.DisableGenerateAssemblyInfo();
+
+                MigrateFrameworks(projectDetails.Frameworks, xmlRoot, ns);
+                MigrateProperties(projectDetails, xmlRoot, ns);
+                MigrateChooseElements(projectDetails.ChooseElements, xmlRoot, ns);
+                MigrateDependencies(projectDetails, xmlRoot, ns);
+                MigrateImports(projectDetails.Imports, xmlRoot, ns);
+                MigrateTargets(projectDetails.Targets, xmlRoot, ns);
+
+                xmlRoot = RemoveAllNamespaces(xmlRoot);
+                xmlRoot.Save(tempCSProjPath);
+
+                File.Copy(projectDetails.CSProjPath, projectDetails.CSProjPath + ".old", overwrite: true);
+                File.Copy(tempCSProjPath, projectDetails.CSProjPath, overwrite: true);
+
+                if(File.Exists(projectDetails.ProjectJsonPath + ".old"))
+                {
+                    File.Delete(projectDetails.ProjectJsonPath + ".old");
+                }
+                File.Move(projectDetails.ProjectJsonPath, projectDetails.ProjectJsonPath + ".old");
+
+                var tempDir = Path.GetDirectoryName(tempCSProjPath);
+                if (Directory.Exists(tempDir))
+                {
+                    Directory.Delete(tempDir, recursive: true);
+                }
             }
         }
 
         // Picked part of this from http://stackoverflow.com/questions/987135/how-to-remove-all-namespaces-from-xml-with-c
         private static XElement RemoveAllNamespaces(XElement xmlRoot)
         {
-            
-
+            XElement element = null;
             if (!xmlRoot.HasElements)
             {
-                var element = new XElement(xmlRoot.Name.LocalName)
+                element = new XElement(xmlRoot.Name.LocalName);
+                if (!string.IsNullOrEmpty(xmlRoot.Value) && !string.IsNullOrWhiteSpace(xmlRoot.Value))
                 {
-                    Value = xmlRoot.Value
-                };
-                foreach (var attribute in xmlRoot.Attributes())
-                {
-                    element.SetAttributeValue(attribute.Name.LocalName, attribute.Value);
+                    element.Value = xmlRoot.Value;
                 }
-
-                return element;
             }
             else
             {
-                var element = new XElement(xmlRoot.Name.LocalName, xmlRoot.Elements().Select(el => RemoveAllNamespaces(el)));
-                foreach (var attribute in xmlRoot.Attributes())
-                {
-                    element.SetAttributeValue(attribute.Name.LocalName, attribute.Value);
-                }
-
-                return element;
+                element = new XElement(xmlRoot.Name.LocalName, xmlRoot.Elements().Select(el => RemoveAllNamespaces(el)));
             }
 
+            foreach (var attribute in xmlRoot.Attributes())
+            {
+                element.SetAttributeValue(attribute.Name.LocalName, attribute.Value);
+            }
 
+            return element;
         }
 
         private void MigrateChooseElements(IEnumerable<XElement> chooseElements, XElement xmlRoot, XNamespace ns)
@@ -316,18 +318,28 @@ namespace NuGetMigrator
                 propertyGroupElement = new XElement(LegacyProjectDetails.PROPERTY_GROUP_TAG);
                 
                 //propertyGroupElement.Add(projectDetails.ProjectGuid);
-                //propertyGroupElement.Add(projectDetails.RootNameSpace);
+                propertyGroupElement.Add(projectDetails.RootNameSpace);
                 propertyGroupElement.Add(projectDetails.AssemblyName);
                 propertyGroupElement.Add(projectDetails.CodeAnalysisRuleSet);
+
+                if(projectDetails.GenerateAssemblyInfo != null)
+                {
+                    propertyGroupElement.Add(projectDetails.GenerateAssemblyInfo);
+                }
 
                 xmlRoot.Add(propertyGroupElement, ns);
             }
             else
             {
                 //propertyGroupElement.Add(projectDetails.ProjectGuid);
-                //propertyGroupElement.Add(projectDetails.RootNameSpace);
+                propertyGroupElement.Add(projectDetails.RootNameSpace);
                 propertyGroupElement.Add(projectDetails.AssemblyName);
                 propertyGroupElement.Add(projectDetails.CodeAnalysisRuleSet);
+
+                if (projectDetails.GenerateAssemblyInfo != null)
+                {
+                    propertyGroupElement.Add(projectDetails.GenerateAssemblyInfo);
+                }
             }
         }
 
