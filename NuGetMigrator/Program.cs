@@ -24,18 +24,18 @@ namespace NuGetMigrator
             // For testing
             var dotnetPath = @"E:\cli\artifacts\win10-x64\stage2\dotnet.exe";
             var root = @"E:\migrate\NuGet.Client\src\NuGet.Clients";
-            //var projectFolderPaths = new List<DirectoryInfo>
-            //{
-            //    new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade"),
-            //    new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade\VisualStudio14.Packages"),
-            //    new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade\VisualStudio15.Packages")
-            //};
+            var projectFolderPaths = new List<DirectoryInfo>
+            {
+                new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade"),
+                new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade\VisualStudio14.Packages"),
+                new DirectoryInfo(@"E:\migrate\NuGet.Client\src\NuGet.Clients\VisualStudio.Facade\VisualStudio15.Packages")
+            };
 
             //var dotnetPath = args[0];
             //var root = args[1];
 
             var csProjFiles = Directory.GetFiles(root, "*.csproj", SearchOption.AllDirectories);
-            var projectFolderPaths = csProjFiles.Select(p => Directory.GetParent(p));
+            //var projectFolderPaths = csProjFiles.Select(p => Directory.GetParent(p));
 
             var migrator = new LegacyToXplatMigrator(dotnetPath);
             foreach(var projectFolderPath in projectFolderPaths)
@@ -71,6 +71,7 @@ namespace NuGetMigrator
                 MigrateDependencies(projectDetails, xmlRoot, ns);
                 MigrateImports(projectDetails.Imports, xmlRoot, ns);
                 MigrateTargets(projectDetails.Targets, xmlRoot, ns);
+                MigrateResourceFiles(projectDetails.ResourceFileItemGroup, xmlRoot, ns);
 
                 xmlRoot = RemoveAllNamespaces(xmlRoot);
                 xmlRoot.Save(tempCSProjPath);
@@ -89,6 +90,14 @@ namespace NuGetMigrator
                 {
                     Directory.Delete(tempDir, recursive: true);
                 }
+            }
+        }
+
+        private void MigrateResourceFiles(XElement resourceFileItemGroup, XElement xmlRoot, XNamespace ns)
+        {
+            if(resourceFileItemGroup != null)
+            {
+                xmlRoot.Add(resourceFileItemGroup, ns);
             }
         }
 
@@ -319,8 +328,8 @@ namespace NuGetMigrator
                 
                 //propertyGroupElement.Add(projectDetails.ProjectGuid);
                 propertyGroupElement.Add(projectDetails.RootNameSpace);
-                propertyGroupElement.Add(projectDetails.AssemblyName);
-                propertyGroupElement.Add(projectDetails.CodeAnalysisRuleSet);
+                //propertyGroupElement.Add(projectDetails.AssemblyName);
+                //propertyGroupElement.Add(projectDetails.CodeAnalysisRuleSet);
 
                 if(projectDetails.GenerateAssemblyInfo != null)
                 {
@@ -333,8 +342,8 @@ namespace NuGetMigrator
             {
                 //propertyGroupElement.Add(projectDetails.ProjectGuid);
                 propertyGroupElement.Add(projectDetails.RootNameSpace);
-                propertyGroupElement.Add(projectDetails.AssemblyName);
-                propertyGroupElement.Add(projectDetails.CodeAnalysisRuleSet);
+                //propertyGroupElement.Add(projectDetails.AssemblyName);
+                //propertyGroupElement.Add(projectDetails.CodeAnalysisRuleSet);
 
                 if (projectDetails.GenerateAssemblyInfo != null)
                 {

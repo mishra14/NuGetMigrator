@@ -32,7 +32,16 @@ namespace NuGetMigrator
         public const string WHEN_TAG = "When";
         public const string CONDITION_TAG = "Condition";
         public const string GENERATE_ASSEMBLY_INFO_TAG = "GenerateAssemblyInfo";
+        public const string EMBEDDED_RESOURCE_TAG = "EmbeddedResource";
+        public const string COMPILE_TAG = "Compile";
+        public const string UPDATE_TAG = "Update";
+        public const string GENERATOR_TAG = "Generator";
+        public const string LAST_GEN_OUTPUT_TAG = "LastGenOutput";
+        public const string DESIGN_TIME_TAG = "DesignTime";
+        public const string AUTO_GEN_TAG = "AutoGen";
+        public const string DEPENDENT_UPON_TAG = "DependentUpon";
 
+        public string ProjectFolderPath { get; set; }
         public string CSProjPath { get; set; }
         public string ProjectJsonPath { get; set; }
         public JToken PackageReferences { get; set; }
@@ -48,6 +57,7 @@ namespace NuGetMigrator
         public XElement AssemblyName { get; set; }
         public XElement CodeAnalysisRuleSet { get; set; }
         public XElement GenerateAssemblyInfo { get; set; }
+        public XElement ResourceFileItemGroup { get; set; }
 
         public static LegacyProjectDetails ExtractDetails(string projectFolderPath)
         {
@@ -55,12 +65,14 @@ namespace NuGetMigrator
             var csprojPath = Directory.GetFiles(projectFolderPath, "*.csproj", SearchOption.TopDirectoryOnly)[0];
             var projectDetails = new LegacyProjectDetails()
             {
+                ProjectFolderPath = projectFolderPath,
                 CSProjPath = csprojPath,
                 ProjectJsonPath = projectJsonPath
             };
 
             projectDetails.ExtractProjectJsonDetails();
             projectDetails.ExtractCSProjDetails();
+            projectDetails.ExtractResourceFileDetails();
 
             return projectDetails;
         }
@@ -133,6 +145,49 @@ namespace NuGetMigrator
                 PackageReferences = jsonObj["dependencies"];
                 Frameworks = jsonObj["frameworks"];
                 RunTimes = jsonObj["runtimes"];
+            }
+        }
+
+        /*
+         * <ItemGroup>
+            <Compile Update="Resource1.Designer.cs">
+                <DesignTime>True</DesignTime>
+                <AutoGen>True</AutoGen>
+                <DependentUpon>Resource1.resx</DependentUpon>
+            </Compile>
+            </ItemGroup>
+
+            <ItemGroup>
+            <EmbeddedResource Update="Resource1.resx">
+                <Generator>ResXFileCodeGenerator</Generator>
+                <LastGenOutput>Resource1.Designer.cs</LastGenOutput>
+            </EmbeddedResource>
+            </ItemGroup> 
+         * */
+        public void ExtractResourceFileDetails()
+        {
+            var resourceFiles = Directory.GetFiles(ProjectFolderPath, "*.resx", SearchOption.TopDirectoryOnly);
+            if (resourceFiles.Any())
+            {
+                ResourceFileItemGroup = new XElement(ITEM_GROUP_TAG);
+                foreach(var resourceFile in resourceFiles)
+                {
+                    var resourceFileName = Path.GetFileName(resourceFile);
+                    var designerFileName = Path.GetFileNameWithoutExtension(resourceFile) + ".Designer.cs";
+
+                    var embeddedResourceElement = new XElement(EMBEDDED_RESOURCE_TAG);
+                    embeddedResourceElement.SetAttributeValue(UPDATE_TAG, resourceFileName);
+                    embeddedResourceElement.Add(new XElement(GENERATOR_TAG, "ResXFileCodeGenerator"));
+                    embeddedResourceElement.Add(new XElement(LAST_GEN_OUTPUT_TAG, designerFileName));
+                    ResourceFileItemGroup.Add(embeddedResourceElement);
+
+                    var compileElement = new XElement(COMPILE_TAG);
+                    compileElement.SetAttributeValue(UPDATE_TAG, designerFileName);
+                    compileElement.Add(new XElement(DESIGN_TIME_TAG, "True"));
+                    compileElement.Add(new XElement(AUTO_GEN_TAG, "True"));
+                    compileElement.Add(new XElement(DEPENDENT_UPON_TAG, resourceFileName));
+                    ResourceFileItemGroup.Add(compileElement);
+                }
             }
         }
     }
