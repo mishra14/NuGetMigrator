@@ -57,8 +57,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="LegacyToPackageRefMigrator.cs" />
     <Compile Include="Program.cs" />
-    <Compile Include="ProjectDetails.cs" />
+    <Compile Include="LegacyProjectSummary.cs" />
+    <Compile Include="ProjectJsonProjectSummary.cs" />
+    <Compile Include="ProjectJsonToLegacyMigrator.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

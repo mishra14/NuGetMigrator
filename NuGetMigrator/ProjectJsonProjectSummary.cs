@@ -7,7 +7,7 @@ using Newtonsoft.Json.Linq;
 
 namespace NuGetMigrator
 {
-    class LegacyProjectDetails
+    class ProjectJsonProjectSummary
     {
         public const string PROPERTY_GROUP_TAG = "PropertyGroup";
         public const string ITEM_GROUP_TAG = "ItemGroup";
@@ -59,11 +59,11 @@ namespace NuGetMigrator
         public XElement ResourceFileItemGroup { get; set; }
         public IEnumerable<XElement> AssemblyInfo { get; set; }
 
-        public static LegacyProjectDetails ExtractDetails(string projectFolderPath)
+        public static ProjectJsonProjectSummary ExtractDetails(string projectFolderPath)
         {
             var projectJsonPath = Path.Combine(projectFolderPath, "project.json");
             var csprojPath = Directory.GetFiles(projectFolderPath, "*.csproj", SearchOption.TopDirectoryOnly)[0];
-            var projectDetails = new LegacyProjectDetails()
+            var projectDetails = new ProjectJsonProjectSummary()
             {
                 ProjectFolderPath = projectFolderPath,
                 CSProjPath = csprojPath,
@@ -171,7 +171,7 @@ namespace NuGetMigrator
             if (resourceFiles.Any())
             {
                 ResourceFileItemGroup = new XElement(ITEM_GROUP_TAG);
-                foreach(var resourceFile in resourceFiles)
+                foreach (var resourceFile in resourceFiles)
                 {
                     var resourceFileName = Path.GetFileName(resourceFile);
                     var designerFileName = Path.GetFileNameWithoutExtension(resourceFile) + ".Designer.cs";
@@ -182,19 +182,19 @@ namespace NuGetMigrator
                     embeddedResourceElement.Add(new XElement(LAST_GEN_OUTPUT_TAG, designerFileName));
                     ResourceFileItemGroup.Add(embeddedResourceElement);
 
-                    //var compileElement = new XElement(COMPILE_TAG);
-                    //compileElement.SetAttributeValue(UPDATE_TAG, designerFileName);
-                    //compileElement.Add(new XElement(DESIGN_TIME_TAG, "True"));
-                    //compileElement.Add(new XElement(AUTO_GEN_TAG, "True"));
-                    //compileElement.Add(new XElement(DEPENDENT_UPON_TAG, resourceFileName));
-                    //ResourceFileItemGroup.Add(compileElement);
+                    var compileElement = new XElement(COMPILE_TAG);
+                    compileElement.SetAttributeValue(UPDATE_TAG, designerFileName);
+                    compileElement.Add(new XElement(DESIGN_TIME_TAG, "True"));
+                    compileElement.Add(new XElement(AUTO_GEN_TAG, "True"));
+                    compileElement.Add(new XElement(DEPENDENT_UPON_TAG, resourceFileName));
+                    ResourceFileItemGroup.Add(compileElement);
                 }
             }
         }
 
         private void ExtractAssemblyInfo()
         {
-            if(Directory.Exists(Path.Combine(ProjectFolderPath, "Properties")))
+            if (Directory.Exists(Path.Combine(ProjectFolderPath, "Properties")))
             {
                 AssemblyInfoPath = Directory.GetFiles(Path.Combine(ProjectFolderPath, "Properties"), "AssemblyInfo.cs", SearchOption.TopDirectoryOnly)
                     .FirstOrDefault();

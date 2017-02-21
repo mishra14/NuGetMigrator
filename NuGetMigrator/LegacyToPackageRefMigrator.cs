@@ -20,11 +20,11 @@ namespace NuGetMigrator
 
         public void Migrate(string projectFolderPath)
         {
-            if (LegacyProjectDetails.CanProjectBeMigrated(projectFolderPath))
+            if (LegacyProjectSummary.CanProjectBeMigrated(projectFolderPath))
             {
                 Console.WriteLine($"Migrating {projectFolderPath}");
                 var tempCSProjPath = CreateTempCSProjFile();
-                var projectDetails = LegacyProjectDetails.ExtractDetails(projectFolderPath);
+                var projectDetails = LegacyProjectSummary.ExtractDetails(projectFolderPath);
                 var xmlRoot = XElement.Load(tempCSProjPath);
                 var ns = xmlRoot.GetDefaultNamespace();
 
@@ -100,13 +100,13 @@ namespace NuGetMigrator
         {
             foreach (var chooseElement in chooseElements)
             {
-                var whenElements = chooseElement.Descendants().Where(e => e.Name.LocalName == LegacyProjectDetails.WHEN_TAG);
+                var whenElements = chooseElement.Descendants().Where(e => e.Name.LocalName == LegacyProjectSummary.WHEN_TAG);
                 foreach (var whenElement in whenElements)
                 {
                     var conditionedGroups = whenElement.Elements();
                     foreach (var conditionedGroup in conditionedGroups)
                     {
-                        var condition = whenElement.Attribute(LegacyProjectDetails.CONDITION_TAG);
+                        var condition = whenElement.Attribute(LegacyProjectSummary.CONDITION_TAG);
                         conditionedGroup.SetAttributeValue(condition.Name.LocalName, condition.Value);
 
                         xmlRoot.Add(conditionedGroup, ns);
@@ -135,24 +135,24 @@ namespace NuGetMigrator
             var property = string.Empty;
             if (frameworks.Count() > 1)
             {
-                property = LegacyProjectDetails.TARGET_FRAMEWORKS_TAG;
+                property = LegacyProjectSummary.TARGET_FRAMEWORKS_TAG;
             }
             else
             {
-                property = LegacyProjectDetails.TARGET_FRAMEWORK_TAG;
+                property = LegacyProjectSummary.TARGET_FRAMEWORK_TAG;
             }
 
-            var frameworkElement = xmlRoot.Descendants().Where(e => e.Name.LocalName == LegacyProjectDetails.TARGET_FRAMEWORK_TAG).FirstOrDefault();
+            var frameworkElement = xmlRoot.Descendants().Where(e => e.Name.LocalName == LegacyProjectSummary.TARGET_FRAMEWORK_TAG).FirstOrDefault();
             if (frameworkElement == null)
             {
-                xmlRoot.Add(new XElement(LegacyProjectDetails.PROPERTY_GROUP_TAG, new XElement(property, frameworksStringBuilder.ToString())), ns);
+                xmlRoot.Add(new XElement(LegacyProjectSummary.PROPERTY_GROUP_TAG, new XElement(property, frameworksStringBuilder.ToString())), ns);
             }
             else
             {
                 if (frameworks.Count() > 1)
                 {
                     frameworkElement.Remove();
-                    xmlRoot.Add(new XElement(LegacyProjectDetails.PROPERTY_GROUP_TAG, new XElement(property, frameworksStringBuilder.ToString())), ns);
+                    xmlRoot.Add(new XElement(LegacyProjectSummary.PROPERTY_GROUP_TAG, new XElement(property, frameworksStringBuilder.ToString())), ns);
                 }
                 else
                 {
@@ -161,7 +161,7 @@ namespace NuGetMigrator
             }
         }
 
-        private void MigrateDependencies(LegacyProjectDetails projectDetails, XElement xmlRoot, XNamespace ns)
+        private void MigrateDependencies(LegacyProjectSummary projectDetails, XElement xmlRoot, XNamespace ns)
         {
             MigrateAssemblyReferences(projectDetails.AssemblyReferences, xmlRoot, ns);
             MigrateProjectReferences(projectDetails.ProjectReferences, xmlRoot, ns);
@@ -172,10 +172,10 @@ namespace NuGetMigrator
         {
             if (assemblyReferences.Any())
             {
-                var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
+                var itemGroupElement = new XElement(LegacyProjectSummary.ITEM_GROUP_TAG);
                 foreach (var assemblyReference in assemblyReferences)
                 {
-                    if (!XmlContainsReference(xmlRoot, LegacyProjectDetails.ASSEMBLY_REFERNCE_TAG, assemblyReference))
+                    if (!XmlContainsReference(xmlRoot, LegacyProjectSummary.ASSEMBLY_REFERNCE_TAG, assemblyReference))
                     {
                         itemGroupElement.Add(assemblyReference);
                     }
@@ -188,10 +188,10 @@ namespace NuGetMigrator
         {
             if (projectReferences.Any())
             {
-                var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
+                var itemGroupElement = new XElement(LegacyProjectSummary.ITEM_GROUP_TAG);
                 foreach (var projectReference in projectReferences)
                 {
-                    if (!XmlContainsReference(xmlRoot, LegacyProjectDetails.PROJECT_REFERNCE_TAG, projectReference))
+                    if (!XmlContainsReference(xmlRoot, LegacyProjectSummary.PROJECT_REFERNCE_TAG, projectReference))
                     {
                         itemGroupElement.Add(projectReference);
                     }
@@ -204,14 +204,14 @@ namespace NuGetMigrator
         {
             if (packageReferences.Any())
             {
-                var itemGroupElement = new XElement(LegacyProjectDetails.ITEM_GROUP_TAG);
+                var itemGroupElement = new XElement(LegacyProjectSummary.ITEM_GROUP_TAG);
                 foreach (var dependency in packageReferences)
                 {
                     var id = (dependency as JProperty).Name;
                     var version = (dependency as JProperty).Value;
-                    var packageReferenceElement = new XElement(LegacyProjectDetails.PACKAGE_REFERNCE_TAG);
-                    packageReferenceElement.SetAttributeValue(LegacyProjectDetails.VERSION_TAG, version);
-                    packageReferenceElement.SetAttributeValue(LegacyProjectDetails.INCLUDE_TAG, id);
+                    var packageReferenceElement = new XElement(LegacyProjectSummary.PACKAGE_REFERNCE_TAG);
+                    packageReferenceElement.SetAttributeValue(LegacyProjectSummary.VERSION_TAG, version);
+                    packageReferenceElement.SetAttributeValue(LegacyProjectSummary.INCLUDE_TAG, id);
                     itemGroupElement.Add(packageReferenceElement);
                 }
                 xmlRoot.Add(itemGroupElement);
@@ -220,32 +220,32 @@ namespace NuGetMigrator
 
         private bool XmlContainsReference(XElement xmlRoot, string referenceType, XElement reference)
         {
-            var includeValue = reference.Attribute(LegacyProjectDetails.INCLUDE_TAG).Value;
+            var includeValue = reference.Attribute(LegacyProjectSummary.INCLUDE_TAG).Value;
             return xmlRoot
                 .Descendants()
-                .Where(e => e.Name.LocalName == referenceType && e.Attribute(LegacyProjectDetails.INCLUDE_TAG).Value == includeValue)
+                .Where(e => e.Name.LocalName == referenceType && e.Attribute(LegacyProjectSummary.INCLUDE_TAG).Value == includeValue)
                 .Any();
         }
 
         private bool IsReferenceFromGAC(XElement reference, IEnumerable<string> gacReferences)
         {
-            var includeValue = reference.Attribute(LegacyProjectDetails.INCLUDE_TAG).Value;
+            var includeValue = reference.Attribute(LegacyProjectSummary.INCLUDE_TAG).Value;
             return gacReferences!=null && gacReferences.Contains(includeValue.ToLower());
         }
 
-        private void MigrateProperties(LegacyProjectDetails projectDetails, XElement xmlRoot, XNamespace ns)
+        private void MigrateProperties(LegacyProjectSummary projectDetails, XElement xmlRoot, XNamespace ns)
         {
             var propertyGroupElement = xmlRoot
                 .Descendants()
-                .Where(e => e.Name.LocalName == LegacyProjectDetails.PROPERTY_GROUP_TAG &&
-                            e.Descendants().Where(f => f.Name.LocalName == LegacyProjectDetails.OUTPUT_TYPE_TAG).Any())
+                .Where(e => e.Name.LocalName == LegacyProjectSummary.PROPERTY_GROUP_TAG &&
+                            e.Descendants().Where(f => f.Name.LocalName == LegacyProjectSummary.OUTPUT_TYPE_TAG).Any())
                  .FirstOrDefault();
 
             var newPropertyGroup = false;
 
             if (propertyGroupElement == null)
             {
-                propertyGroupElement = new XElement(LegacyProjectDetails.PROPERTY_GROUP_TAG);
+                propertyGroupElement = new XElement(LegacyProjectSummary.PROPERTY_GROUP_TAG);
                 newPropertyGroup = true;
             }
 
