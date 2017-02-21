@@ -2,8 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Xml.Linq;
 using Newtonsoft.Json.Linq;
 
@@ -44,6 +42,7 @@ namespace NuGetMigrator
         public string ProjectFolderPath { get; set; }
         public string CSProjPath { get; set; }
         public string ProjectJsonPath { get; set; }
+        public string AssemblyInfoPath { get; set; }
         public JToken PackageReferences { get; set; }
         public JToken Frameworks { get; set; }
         public JToken RunTimes { get; set; }
@@ -58,6 +57,7 @@ namespace NuGetMigrator
         public XElement CodeAnalysisRuleSet { get; set; }
         public XElement GenerateAssemblyInfo { get; set; }
         public XElement ResourceFileItemGroup { get; set; }
+        public IEnumerable<XElement> AssemblyInfo { get; set; }
 
         public static LegacyProjectDetails ExtractDetails(string projectFolderPath)
         {
@@ -73,6 +73,7 @@ namespace NuGetMigrator
             projectDetails.ExtractProjectJsonDetails();
             projectDetails.ExtractCSProjDetails();
             projectDetails.ExtractResourceFileDetails();
+            projectDetails.ExtractAssemblyInfo();
 
             return projectDetails;
         }
@@ -80,7 +81,7 @@ namespace NuGetMigrator
         public static bool CanProjectBeMigrated(string projectFolderPath)
         {
             var projectJsonPath = Path.Combine(projectFolderPath, "project.json");
-            var csprojPath = Directory.GetFiles(projectFolderPath, "*.csproj", SearchOption.TopDirectoryOnly)[0];
+            var csprojPath = Directory.GetFiles(projectFolderPath, "*.csproj", SearchOption.TopDirectoryOnly).FirstOrDefault();
 
             if (!File.Exists(csprojPath))
             {
@@ -181,14 +182,59 @@ namespace NuGetMigrator
                     embeddedResourceElement.Add(new XElement(LAST_GEN_OUTPUT_TAG, designerFileName));
                     ResourceFileItemGroup.Add(embeddedResourceElement);
 
-                    var compileElement = new XElement(COMPILE_TAG);
-                    compileElement.SetAttributeValue(UPDATE_TAG, designerFileName);
-                    compileElement.Add(new XElement(DESIGN_TIME_TAG, "True"));
-                    compileElement.Add(new XElement(AUTO_GEN_TAG, "True"));
-                    compileElement.Add(new XElement(DEPENDENT_UPON_TAG, resourceFileName));
-                    ResourceFileItemGroup.Add(compileElement);
+                    //var compileElement = new XElement(COMPILE_TAG);
+                    //compileElement.SetAttributeValue(UPDATE_TAG, designerFileName);
+                    //compileElement.Add(new XElement(DESIGN_TIME_TAG, "True"));
+                    //compileElement.Add(new XElement(AUTO_GEN_TAG, "True"));
+                    //compileElement.Add(new XElement(DEPENDENT_UPON_TAG, resourceFileName));
+                    //ResourceFileItemGroup.Add(compileElement);
                 }
             }
+        }
+
+        private void ExtractAssemblyInfo()
+        {
+            if(Directory.Exists(Path.Combine(ProjectFolderPath, "Properties")))
+            {
+                AssemblyInfoPath = Directory.GetFiles(Path.Combine(ProjectFolderPath, "Properties"), "AssemblyInfo.cs", SearchOption.TopDirectoryOnly)
+                    .FirstOrDefault();
+
+                var lines = File.ReadAllLines(AssemblyInfoPath)
+                    .Where(l => l.Contains("[assembly: "));
+
+                if (lines.Any())
+                {
+                    var infoList = new List<XElement>();
+                    foreach (var line in lines)
+                    {
+                        var assemblyInfo = GetAssemblyInfoFromLine(line);
+                        if (assemblyInfo != null)
+                        {
+                            var assemblyInfoElement = new XElement(assemblyInfo.Item1)
+                            {
+                                Value = assemblyInfo.Item2
+                            };
+                            infoList.Add(assemblyInfoElement);
+                        }
+                    }
+                    AssemblyInfo = infoList;
+                }
+            }
+        }
+
+        public Tuple<string, string> GetAssemblyInfoFromLine(string line)
+        {
+            if (line.Contains(":") && line.Contains("(") && line.Contains(")"))
+            {
+                var data = line.Split(':')[1];
+                var attribute = data.Split('(')[0].Trim();
+                var value = data.Split('(')[1].Trim();
+                var containsQuotes = value.StartsWith("\"");
+                value = value.Substring(containsQuotes ? 1 : 0, value.Length - (containsQuotes ? 4 : 2));
+                return new Tuple<string, string>(attribute, value);
+            }
+
+            return null;
         }
     }
 }
