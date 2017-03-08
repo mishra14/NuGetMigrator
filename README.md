@@ -1,1 +1,3 @@
 # NuGet Migrator
+
+Unofficial migrator.
