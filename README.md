@@ -1,3 +1,3 @@
 # NuGet Migrator
 
-Unofficial migrator.
+Unofficial migrator from project.json to net core package reference.
